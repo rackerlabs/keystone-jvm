@@ -1,0 +1,150 @@
+buildscript {
+    repositories {
+        jcenter()
+    }
+    dependencies {
+        classpath 'com.github.jengelman.gradle.plugins:shadow:1.1.1'
+    }
+}
+
+apply plugin: 'java'
+apply plugin: 'com.github.johnrengelman.shadow'
+
+description = """jython"""
+
+def srcJava = 'jython/src'
+def antlrSource = "jython/grammar"
+def antlrOutput = "$buildDir/generated-src/antlr"
+
+configurations {
+    antlr3
+    shadow
+}
+
+repositories {
+    mavenCentral()
+    maven {
+        url "http://repository.springsource.com/maven/bundles/release"
+        url "http://repository.springsource.com/maven/bundles/external"
+    }
+}
+
+dependencies {
+    compile 'com.github.jnr:jffi:0.7.10'
+    compile 'com.github.jnr:jnr-constants:0.8.4'
+    compile 'com.github.jnr:jnr-netdb:1.1.1'
+    compile 'com.github.jnr:jnr-posix:2.4.0'
+    compile 'com.google.guava:guava:17.0'
+    compile 'com.ibm.icu:icu4j:52.1'
+    compile 'io.netty:netty-buffer:4.0.20.Final'
+    compile 'io.netty:netty-codec:4.0.20.Final'
+    compile 'io.netty:netty-common:4.0.20.Final'
+    compile 'io.netty:netty-handler:4.0.20.Final'
+    compile 'io.netty:netty-transport:4.0.20.Final'
+    compile 'javax.servlet:servlet-api:2.5'
+    compile 'jline:jline:1.0'
+    compile 'mysql:mysql-connector-java:5.1.6'
+    compile 'org.antlr:antlr-runtime:3.1.3'
+    compile 'org.apache.ant:ant:1.8.2'
+    compile 'org.apache.commons:commons-compress:1.8.1'
+    compile 'org.gnu.readline:com.springsource.org.gnu.readline:0.8.0'
+    compile 'postgresql:postgresql:8.3-603.jdbc4'
+    testCompile 'junit:junit:4.10'
+    testCompile 'org.ow2.asm:asm-commons:4.0'
+    testCompile 'org.ow2.asm:asm-util:4.0'
+    antlr3 'org.antlr:antlr:3.3'
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs = [srcJava, antlrOutput]
+            exclude '**/handler/InformixDataHandler.java'
+            exclude '**/handler/OracleDataHandler.java'
+        }
+    }
+}
+
+task generateGrammarSource {
+  description = "Generates Java sources from Antlr3 grammars."
+  inputs.dir file(antlrSource)
+  outputs.dir file(antlrOutput)
+} << {
+  mkdir(antlrOutput)
+
+  def grammars = fileTree(antlrSource).include("**/Python*.g")
+
+  ant.java(classname: 'org.antlr.Tool', fork: true, classpath: "${configurations.antlr3.asPath}") {
+     arg(line: "-o ${antlrOutput}/org/python/antlr/ast")
+     arg(line: grammars.files.join(" "))
+  }
+}
+
+compileJava.dependsOn generateGrammarSource
+
+task expose {
+    inputs.dir file("$buildDir/classes/main")
+    outputs.dir file("$buildDir/exposed")
+    doLast {
+        file('build/exposed').mkdirs()
+        ant.taskdef(name: 'expose', classname: 'org.python.expose.generate.ExposeTask') {
+            classpath {
+                pathElement(location: sourceSets.main.output.classesDir)
+                pathElement(path: configurations.compile.asPath)
+            }
+        }
+        ant.expose(
+            srcdir: "$buildDir/classes/main",
+            destdir: "$buildDir/exposed",
+            includesfile: "$projectDir/jython/CoreExposed.includes")
+    }
+}
+
+jar {
+    archiveName = 'jython-standalone.jar'
+}
+
+shadowJar {
+    archiveName = 'jython-standalone.jar'
+    dependsOn expose
+    manifest {
+        attributes('Main-Class': 'org.python.util.jython')
+    }
+    into('/') {
+        from fileTree('build/exposed/')
+    }
+    into('Lib') {
+        from fileTree('jython/lib-python/2.7')
+        exclude '**/*.pyc'
+        exclude '**/*.pyo'
+        setIncludes(file('jython/CPythonLib.includes').readLines())
+    }
+    into('Lib') {
+        from fileTree('jython/Lib')
+    }
+    into('org/python') {
+        from 'version.properties'
+    }
+    into('com/ziclix/python/sql/resource') {
+        from 'jython/src/com/ziclix/python/sql/resource/zxJDBCMessages.properties'
+    }
+    relocate "org.antlr.runtime", "org.python.antlr.runtime"
+    relocate "org.objectweb.asm", "org.python.objectweb.asm"
+    relocate "org.bouncycastle", "org.python.bouncycastle"
+    relocate "org.bouncycastle", "org.python.bouncycastle"
+    relocate "org.apache", "org.python.apache"
+    relocate "com.google", "org.python.google"
+    relocate "com.ibm.icu", "org.python.icu"
+    relocate "io.netty", "org.python.netty"
+    relocate "org.apache.xml", "org.python.apache.xml"
+    relocate "org.apache.xerces", "org.python.apache.xerces"
+    relocate "org.apache.wml", "org.python.apache.wml"
+    relocate "org.apache.html", "org.python.apache.html"
+}
+
+artifacts {
+    shadow shadowJar
+}
+
+jar.enabled = false
+build.dependsOn shadowJar

@@ -1,0 +1,87 @@
+apply plugin: 'java'
+apply plugin: 'application'
+
+description = """keystone"""
+
+group = 'org.openstack'
+ext.featureVersion = '2014.2'
+ext.buildVersion = System.currentTimeMillis()
+
+version = "$featureVersion-$buildVersion"
+
+buildscript {
+    repositories {
+        jcenter()
+        maven {
+            url "http://repository.springsource.com/maven/bundles/release"
+            url "http://repository.springsource.com/maven/bundles/external"
+        }
+    }
+}
+
+repositories {
+    mavenCentral()
+    maven {
+        url "http://repository.springsource.com/maven/bundles/release"
+        url "http://repository.springsource.com/maven/bundles/external"
+    }
+}
+
+dependencies {
+    compile project(path: ':jython', configuration: 'shadow')
+}
+
+task copyLibPython(type: Copy) {
+    dependsOn 'jython:jar'
+    from fileTree('jython/jython/lib-python/2.7')
+    into "python/Lib"
+    exclude '**/*.pyc'
+    exclude '**/*.pyo'
+    setIncludes(file('jython/jython/CPythonLib.includes').readLines())
+}
+
+task copyJythonLib(type: Copy) {
+    dependsOn copyLibPython
+    from "$projectDir/jython/jython/Lib"
+    into "python/Lib"
+    exclude '**/*.pyc'
+    exclude '**/*.pyo'
+}
+
+task compileall(type: JavaExec) {
+    dependsOn copyJythonLib
+    main = 'org.python.util.jython'
+    args = ['-c', "import compileall; compileall.compile_dir('python/Lib')"]
+    classpath configurations.runtime
+    environment 'PYTHONPATH', "python/Lib"
+    systemProperty 'install.root', "python"
+    systemProperty 'python.home', "python"
+    systemProperty 'python.path', "$projectDir"
+    systemProperty 'python.executable', "$projectDir/python"
+}
+
+mainClassName = 'org.springframework.boot.loader.JarLauncher'
+
+jar {
+    archiveName = 'keystone-jvm.jar'
+}
+task combinedJar(type: Jar) {
+    archiveName = 'keystone.jar'
+    dependsOn compileall
+    manifest {
+        attributes 'Main-Class': 'org.openstack.Keystone'
+    }
+    duplicatesStrategy = 'exclude'
+    entryCompression = 'stored'
+    from zipTree("build/libs/keystone-jvm.jar")
+    from zipTree("jython/build/libs/jython-standalone.jar")
+    into('Lib') {
+        from fileTree("python/Lib")
+    }
+}
+
+build.dependsOn combinedJar
+
+task wrapper(type: Wrapper) {
+    gradleVersion = '2.1'
+}
