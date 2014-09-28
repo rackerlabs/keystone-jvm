@@ -29,7 +29,7 @@ DESTINATION=python/Lib
 mkdir -p $DESTINATION
 
 cp -r $(pyenv prefix)/lib/python2.7/site-packages/* $DESTINATION
-cp wsgi.py python/Lib
+cp -r keystone_jvm python/Lib
 
 touch $DESTINATION/dogpile/__init__.py
 touch $DESTINATION/oslo/__init__.py
