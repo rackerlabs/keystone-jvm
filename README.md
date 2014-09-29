@@ -49,3 +49,9 @@ Build:
 Run:
 
 `docker run -d -p 3306:3306 mysql`
+
+Mongodb
+-------
+Run:
+
+docker run -d -p 27017:27017 dockerfile/mongodb
